@@ -1,35 +1,39 @@
-const request = require('request');const cheerio = require('cheerio');
+const request = require('request');
+const parseString = require('xml2js').parseString;
 
-async function getGoogleNewsFeed(searchterm) {
-  const url = getGoogleNewsFeedUrl(searchterm);
-  const html = await getHtmlFromRequest(url);
-  return retrieveFeedsFromHtml(html);
+async function getGoogleNewsFeed(searchterm, options) {
+  const url = getGoogleNewsFeedUrl(searchterm, options);
+  const response = await doRequest(url);
+  const rss = await xmlToJson(response);
+  const news = rss.rss.channel[0].item.map(n => {
+    return {
+      title: n.title[0],
+      description: n.description[0],
+      pubDate: n.pubDate[0],
+      link: n.link[0],
+    }
+  });
+  return news;
 }
 
-function retrieveFeedsFromHtml(html) {
-  const $ = cheerio.load(html);
-  const aTags = $('main c-wiz c-wiz div div div div a[role="heading"]');
-  const timeEls = $('main c-wiz c-wiz div div div div div span span');
-  return [
-    getNewsFromCheerioEl(aTags, timeEls, '0'),
-    getNewsFromCheerioEl(aTags, timeEls, '1'),
-    getNewsFromCheerioEl(aTags, timeEls, '2')
-  ];
+async function xmlToJson(xml) {
+  return new Promise((res, rej) => {
+    parseString(xml, function (err, result) {
+      if(err) rej(err);
+      else res(result);
+    });
+  });
 }
 
-function getNewsFromCheerioEl(els, timeEl, pos) {
-  return  {
-    title: els[pos].children[0].data,
-    href: els[pos].attribs.href,
-    time: timeEl[pos].children[0].data
-  }
+
+function getGoogleNewsFeedUrl(searchterm, options) {
+  const lang = options && options.hl && options.hl !== '' ? options.hl : 'en';
+  const country = options && options.country && options.country !== '' ? options.country : 'US';
+  return 'https://news.google.com/news/rss/search/section/q/' + searchterm
+    + '/' + searchterm + '?hl=' + lang + '&gl=' + country.toUpperCase() + '&ned=' + country.toLowerCase();
 }
 
-function getGoogleNewsFeedUrl(searchterm) {
-  return 'https://news.google.com/news/search/section/q/' + searchterm;
-}
-
-async function getHtmlFromRequest(url) {
+async function doRequest(url) {
   return new Promise((res, rej) => {
     request(url, (error, response, body) => {
       if(error) rej(error);
